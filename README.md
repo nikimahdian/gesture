@@ -58,7 +58,7 @@ pip install opencv-python mediapipe scikit-learn numpy pyyaml python-vlc matplot
 
 Place your dataset at:
 
-- `C:\Users\nikim\OneDrive\Desktop\archive`
+- `archive` (in the project root directory)
   - `train.csv`, `val.csv`
   - `train\train\...images...`
   - `val\val\...images...`

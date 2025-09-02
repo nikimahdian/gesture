@@ -1,4 +1,4 @@
-dataset_root: "C:\\Users\\nikim\\OneDrive\\Desktop\\archive"
+dataset_root: "archive"
 output_dir: "outputs"
 sequence_window: 15
 detection_confidence: 0.7
