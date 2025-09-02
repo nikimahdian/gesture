@@ -51,12 +51,16 @@ class WebcamGestureLoop:
         LOGGER.info("mirror_input=%s invert_swipe=%s classes=%s", loop_cfg.mirror_input, loop_cfg.invert_swipe, self.model.classes)
 
         self.smoother = PredictionSmoother(window_size=loop_cfg.smoother_window, confidence_threshold=loop_cfg.smoother_conf_threshold)
+        
+        # Light EMA smoothing for landmarks (minimal smoothing)
+        self.ema_alpha = 0.3  # lighter smoothing, more responsive
+        self.smoothed_landmarks = None  # previous smoothed landmarks (21,3)
 
     def _is_static_motion(self, xs: List[float]) -> bool:
         if len(xs) < 3:
             return True
         diffs = np.abs(np.diff(np.array(xs, dtype=np.float32)))
-        return float(np.median(diffs)) < 0.003
+        return float(np.median(diffs)) < 0.005  # slightly more lenient
 
     def _compute_swipe(self) -> Tuple[Optional[int], dict]:
         xs = self.centroids_x.get()
@@ -109,6 +113,79 @@ class WebcamGestureLoop:
 
         # If strong disagreement, only override with very confident swipe (we don't have swipe_conf here, use heuristic)
         return pred if (pred == swipe_pred) else int(swipe_pred)
+    
+    def _smooth_landmarks_ema(self, landmarks: np.ndarray) -> np.ndarray:
+        """Apply Exponential Moving Average smoothing to landmarks"""
+        if self.smoothed_landmarks is None:
+            # First frame - initialize with current landmarks
+            self.smoothed_landmarks = landmarks.copy()
+            return landmarks
+        
+        # EMA formula: smoothed = alpha * current + (1 - alpha) * previous
+        self.smoothed_landmarks = (self.ema_alpha * landmarks + 
+                                 (1 - self.ema_alpha) * self.smoothed_landmarks)
+        return self.smoothed_landmarks
+    
+    def _check_movement_threshold(self, landmarks: np.ndarray, gesture_type: str = "any") -> bool:
+        """Check if movement exceeds threshold for dynamic gestures"""
+        if self.smoothed_landmarks is None:
+            return True
+        
+        # Calculate movement of wrist (landmark 0) in pixels
+        # Assuming image coordinates are normalized [0,1], convert to pixels (approx 640x480)
+        current_wrist = landmarks[0, :2] * np.array([640, 480])  # x, y only
+        prev_wrist = self.smoothed_landmarks[0, :2] * np.array([640, 480])
+        
+        # For left/right gestures, focus on horizontal displacement only
+        if gesture_type == "horizontal":
+            horizontal_movement = abs(current_wrist[0] - prev_wrist[0])  # x-axis only
+            return horizontal_movement >= self.movement_threshold
+        else:
+            # General movement for other gestures
+            movement_distance = np.linalg.norm(current_wrist - prev_wrist)
+            return movement_distance >= self.movement_threshold
+    
+    def _get_movement_metrics(self, landmarks: np.ndarray) -> dict:
+        """Get detailed movement metrics for debugging"""
+        if self.smoothed_landmarks is None:
+            return {"horizontal": 0.0, "vertical": 0.0, "total": 0.0}
+        
+        current_wrist = landmarks[0, :2] * np.array([640, 480])
+        prev_wrist = self.smoothed_landmarks[0, :2] * np.array([640, 480])
+        
+        horizontal = abs(current_wrist[0] - prev_wrist[0])
+        vertical = abs(current_wrist[1] - prev_wrist[1])
+        total = np.linalg.norm(current_wrist - prev_wrist)
+        
+        return {
+            "horizontal": float(horizontal), 
+            "vertical": float(vertical), 
+            "total": float(total)
+        }
+    
+    def _majority_vote(self, prediction: int) -> Optional[int]:
+        """Apply majority voting over rolling window of predictions"""
+        self.prediction_history.append(prediction)
+        
+        # Keep only last N predictions
+        if len(self.prediction_history) > self.voting_window_size:
+            self.prediction_history.pop(0)
+        
+        # Need enough predictions in window
+        if len(self.prediction_history) < self.voting_window_size:
+            return None
+        
+        # Find most common prediction
+        counts = {}
+        for pred in self.prediction_history:
+            counts[pred] = counts.get(pred, 0) + 1
+        
+        # Return majority if it exists (more than half)
+        max_count = max(counts.values())
+        if max_count > self.voting_window_size // 2:
+            return max(counts, key=counts.get)
+        
+        return None
 
     def run(self, camera_index: Optional[int] = None, show_debug: bool = True) -> None:
         cam_idx = camera_index if camera_index is not None else self.cfg.camera_index
@@ -134,8 +211,12 @@ class WebcamGestureLoop:
                 hands = self.hands.process_image(rgb)
                 if hands:
                     lm = normalize_landmarks(hands[0].landmarks)
-                    self.landmarks.append(lm)
-                    self.centroids_x.append(float(lm[:,0].mean()))
+                    
+                    # Apply EMA smoothing to reduce shake/noise
+                    smoothed_lm = self._smooth_landmarks_ema(lm)
+                    
+                    self.landmarks.append(smoothed_lm)
+                    self.centroids_x.append(float(smoothed_lm[:,0].mean()))
                 else:
                     self.landmarks.append(None)
                     self.centroids_x.append(0.0)
@@ -164,8 +245,8 @@ class WebcamGestureLoop:
                         one_hot = [1 if i == label_idx else 0 for i in range(len(probs))]
 
                         if LOGGER.isEnabledFor(logging.DEBUG):
-                            LOGGER.debug("probs=%s swipe=%s metrics=%s final=%s conf=%.3f",
-                                         np.round(probs,3).tolist(), swipe_pred, swipe_metrics, label_idx, conf)
+                            LOGGER.debug("probs=%s swipe=%s final=%s conf=%.3f",
+                                         np.round(probs,3).tolist(), swipe_pred, label_idx, conf)
 
                         self.smoother.add(label_idx, conf)
 
