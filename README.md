@@ -54,14 +54,25 @@ pip install opencv-python mediapipe scikit-learn numpy pyyaml python-vlc matplot
 
 > If `python-vlc` is not installed, the player falls back to logging-only mode. Install VLC from https://www.videolan.org/vlc/ and ensure it's on PATH for full control.
 
-## Dataset (Windows)
+## Dataset Setup
 
-Place your dataset at:
+**Note**: The dataset (~800MB) is not included in this repository due to GitHub file size limits.
 
-- `archive` (in the project root directory)
-  - `train.csv`, `val.csv`
-  - `train\train\...images...`
-  - `val\val\...images...`
+1. Download or obtain the gesture dataset
+2. Create an `archive` folder in the project root directory
+3. Place your dataset files in the `archive` folder with this structure:
+
+```
+archive/
+  ├── train.csv
+  ├── val.csv
+  ├── train/
+  │   └── train/
+  │       └── ...images...
+  └── val/
+      └── val/
+          └── ...images...
+```
 
 **CSV Parsing Rules**
 
