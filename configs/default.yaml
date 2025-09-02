@@ -1,0 +1,28 @@
+dataset_root: "C:\\Users\\nikim\\OneDrive\\Desktop\\archive"
+output_dir: "outputs"
+sequence_window: 15
+detection_confidence: 0.7
+
+realtime:
+  camera_index: 0
+  buffer_size: 45
+  target_fps: 30
+  inference_interval: 5
+  mirror_input: true
+  invert_swipe: false
+  static_lock: 0.70
+  static_lock_frames: 9
+  swipe_dx_thresh: 0.08
+  swipe_ratio_thresh: 0.80
+  swipe_min_frames: 10
+  swipe_min_path: 0.15
+  smoother:
+    window_size: 7
+    confidence_threshold: 0.7
+
+model:
+  classical:
+    type: "random_forest"
+    n_estimators: 300
+    max_depth: null
+    class_weight: "balanced_subsample"
