@@ -10,15 +10,15 @@ realtime:
   inference_interval: 5
   mirror_input: true
   invert_swipe: false
-  static_lock: 0.70
+  static_lock: 0.60
   static_lock_frames: 9
   swipe_dx_thresh: 0.08
   swipe_ratio_thresh: 0.80
   swipe_min_frames: 10
   swipe_min_path: 0.15
   smoother:
-    window_size: 7
-    confidence_threshold: 0.7
+    window_size: 5
+    confidence_threshold: 0.3
 
 model:
   classical:

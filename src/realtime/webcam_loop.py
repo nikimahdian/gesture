@@ -22,14 +22,17 @@ class LoopConfig:
     inference_interval: int = 5
     mirror_input: bool = True
     invert_swipe: bool = False
-    static_lock: float = 0.70
+    static_lock: float = 0.60
     static_lock_frames: int = 9
-    swipe_dx_thresh: float = 0.08
-    swipe_ratio_thresh: float = 0.80
-    swipe_min_frames: int = 10
-    swipe_min_path: float = 0.15
-    smoother_window: int = 7
-    smoother_conf_threshold: float = 0.7
+    swipe_dx_thresh: float = 0.03
+    swipe_ratio_thresh: float = 0.60
+    swipe_min_frames: int = 5
+    swipe_min_path: float = 0.08
+    smoother_window: int = 5
+    smoother_conf_threshold: float = 0.30  # static gestures threshold  
+    dynamic_conf_threshold: float = 0.65  # threshold for left/right
+    dynamic_hold_time: float = 5.0  # seconds to hold left/right prediction
+    static_hold_time: float = 1.5  # seconds to hold static gestures
 
 
 class WebcamGestureLoop:
@@ -50,11 +53,20 @@ class WebcamGestureLoop:
 
         LOGGER.info("mirror_input=%s invert_swipe=%s classes=%s", loop_cfg.mirror_input, loop_cfg.invert_swipe, self.model.classes)
 
-        self.smoother = PredictionSmoother(window_size=loop_cfg.smoother_window, confidence_threshold=loop_cfg.smoother_conf_threshold)
+        # Use very low threshold for smoother, we'll apply our own thresholds later
+        self.smoother = PredictionSmoother(window_size=loop_cfg.smoother_window, confidence_threshold=0.3)
         
         # Light EMA smoothing for landmarks (minimal smoothing)
         self.ema_alpha = 0.3  # lighter smoothing, more responsive
         self.smoothed_landmarks = None  # previous smoothed landmarks (21,3)
+        
+        # Dynamic gesture timing
+        self.dynamic_gesture_start_time = None
+        self.dynamic_gesture_type = None
+        
+        # Static gesture timing
+        self.static_gesture_start_time = None
+        self.static_gesture_type = None
 
     def _is_static_motion(self, xs: List[float]) -> bool:
         if len(xs) < 3:
@@ -226,7 +238,6 @@ class WebcamGestureLoop:
                 label_idx = None
                 conf = 0.0
                 one_hot = [0,0,0,0,0]
-
                 if (len(self.frames) % max(1, self.cfg.inference_interval)) == 0 and len(self.landmarks) >= self.model.sequence_window:
                     # Build last sequence_window of valid landmarks
                     valid = [lm for lm in self.landmarks.get() if lm is not None]
@@ -249,29 +260,140 @@ class WebcamGestureLoop:
                                          np.round(probs,3).tolist(), swipe_pred, label_idx, conf)
 
                         self.smoother.add(label_idx, conf)
+                        LOGGER.info("Raw prediction: %s conf=%.3f", self.model.classes[label_idx], conf)
 
                 stable_idx, stable_conf = self.smoother.stable()
                 if stable_idx is not None:
-                    label_idx = int(stable_idx)
-                    conf = float(stable_conf)
-                    one_hot = [1 if i == label_idx else 0 for i in range(5)]
+                    LOGGER.info("Smoother output: %s conf=%.3f", self.model.classes[stable_idx], stable_conf)
+                else:
+                    LOGGER.info("Smoother output: None")
 
-                    # map to actions
-                    if label_idx == self.right_idx:
-                        self.player.on_right()
-                    elif label_idx == self.left_idx:
-                        self.player.on_left()
-                    elif label_idx == self.palm_idx:
-                        self.player.on_palm()
-                    elif label_idx == self.thumb_up_idx:
-                        self.player.on_thumb_up()
-                    elif label_idx == self.thumb_down_idx:
-                        self.player.on_thumb_down()
+                current_time = time.time()
+                
+                # Initialize display values
+                label_idx = None
+                conf = 0.0
+                one_hot = [0,0,0,0,0]
+                action_taken = False
+                
+                if stable_idx is not None:
+                    detected_idx = int(stable_idx)
+                    detected_conf = float(stable_conf)
+                    
+                    LOGGER.info("Processing gesture: %s (idx=%d) conf=%.3f", 
+                               self.model.classes[detected_idx], detected_idx, detected_conf)
+                    
+                    # Handle LEFT/RIGHT gestures with hold timer
+                    if detected_idx in [self.left_idx, self.right_idx]:
+                        LOGGER.info("Taking LEFT/RIGHT path")
+                        if detected_conf >= self.cfg.dynamic_conf_threshold:
+                            # Start or continue timing
+                            if (self.dynamic_gesture_type != detected_idx or 
+                                self.dynamic_gesture_start_time is None):
+                                self.dynamic_gesture_start_time = current_time
+                                self.dynamic_gesture_type = detected_idx
+                                LOGGER.info("Starting hold timer for %s (need %.1fs)", 
+                                          self.model.classes[detected_idx], self.cfg.dynamic_hold_time)
+                            
+                            # Check hold duration
+                            hold_duration = current_time - self.dynamic_gesture_start_time
+                            progress = min(hold_duration / self.cfg.dynamic_hold_time, 1.0)
+                            
+                            # Show gesture with progress
+                            label_idx = detected_idx
+                            conf = progress
+                            one_hot = [1 if i == detected_idx else 0 for i in range(5)]
+                            
+                            # Execute action only after full hold time
+                            if hold_duration >= self.cfg.dynamic_hold_time:
+                                action_taken = True
+                                LOGGER.info("EXECUTING %s after %.1fs hold", 
+                                          self.model.classes[detected_idx], hold_duration)
+                                if detected_idx == self.right_idx:
+                                    self.player.on_right()
+                                elif detected_idx == self.left_idx:
+                                    self.player.on_left()
+                                
+                                # Reset timer after action
+                                self.dynamic_gesture_start_time = None
+                                self.dynamic_gesture_type = None
+                        else:
+                            # Not confident enough - reset timer and show no gesture
+                            self.dynamic_gesture_start_time = None
+                            self.dynamic_gesture_type = None
+                            # label_idx, conf, one_hot already initialized to None/0
+                    
+                    # Handle static gestures with hold timer
+                    elif detected_idx in [self.palm_idx, self.thumb_up_idx, self.thumb_down_idx]:
+                        LOGGER.info("Taking STATIC path")
+                        # Reset dynamic timer when switching to static
+                        self.dynamic_gesture_start_time = None
+                        self.dynamic_gesture_type = None
+                        
+                        LOGGER.info("Static gesture check: %s conf=%.3f (need %.3f)", 
+                                   self.model.classes[detected_idx], detected_conf, self.cfg.smoother_conf_threshold)
+                        if detected_conf >= self.cfg.smoother_conf_threshold:
+                            # Start or continue timing for static gesture
+                            if (self.static_gesture_type != detected_idx or 
+                                self.static_gesture_start_time is None):
+                                self.static_gesture_start_time = current_time
+                                self.static_gesture_type = detected_idx
+                                LOGGER.info("Starting static hold timer for %s (need %.1fs)", 
+                                          self.model.classes[detected_idx], self.cfg.static_hold_time)
+                            else:
+                                hold_duration = current_time - self.static_gesture_start_time
+                                LOGGER.info("Continuing static hold: %s for %.1fs", 
+                                          self.model.classes[detected_idx], hold_duration)
+                            
+                            # Check hold duration
+                            hold_duration = current_time - self.static_gesture_start_time
+                            progress = min(hold_duration / self.cfg.static_hold_time, 1.0)
+                            
+                            # Show gesture with progress
+                            label_idx = detected_idx
+                            conf = progress
+                            one_hot = [1 if i == detected_idx else 0 for i in range(5)]
+                            LOGGER.info("Setting static display: %s progress=%.3f", 
+                                       self.model.classes[detected_idx], progress)
+                            
+                            # Execute action only after full hold time
+                            if hold_duration >= self.cfg.static_hold_time:
+                                action_taken = True
+                                LOGGER.info("EXECUTING static %s after %.1fs hold", 
+                                          self.model.classes[detected_idx], hold_duration)
+                                
+                                if detected_idx == self.palm_idx:
+                                    self.player.on_palm()
+                                elif detected_idx == self.thumb_up_idx:
+                                    self.player.on_thumb_up()
+                                elif detected_idx == self.thumb_down_idx:
+                                    self.player.on_thumb_down()
+                                
+                                # Reset timer after action
+                                self.static_gesture_start_time = None
+                                self.static_gesture_type = None
+                        else:
+                            # Not confident enough - reset timer
+                            self.static_gesture_start_time = None
+                            self.static_gesture_type = None
+                else:
+                    # No stable prediction - reset both timers
+                    self.dynamic_gesture_start_time = None
+                    self.dynamic_gesture_type = None
+                    self.static_gesture_start_time = None
+                    self.static_gesture_type = None
 
                 # HUD
+                LOGGER.info("Display values: label_idx=%s conf=%.3f one_hot=%s", 
+                           label_idx, conf, one_hot)
                 if label_idx is not None:
                     label_text = self.model.classes[label_idx] if label_idx < len(self.model.classes) else str(label_idx)
+                    LOGGER.info("Showing HUD: %s", label_text)
                     draw_hud(frame, label_text, conf, one_hot)
+                else:
+                    # Show "NO GESTURE" when not confident enough
+                    LOGGER.info("Showing HUD: NO GESTURE")
+                    draw_hud(frame, "NO GESTURE", 0.0, [0,0,0,0,0])
 
                 if show_debug:
                     cv2.imshow("Gesture HMI", frame)
