@@ -3,7 +3,7 @@ import argparse, logging, yaml
 from pathlib import Path
 from src.realtime.webcam_loop import WebcamGestureLoop, LoopConfig
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+logging.basicConfig(level=logging.ERROR, format="%(message)s")
 
 def main():
     ap = argparse.ArgumentParser()
