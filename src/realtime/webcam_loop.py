@@ -372,13 +372,12 @@ class WebcamGestureLoop:
                 if label_idx is not None:
                     label_text = self.model.classes[label_idx] if label_idx < len(self.model.classes) else str(label_idx)
                     if label_text != getattr(self, 'last_printed_gesture', None):
-                        print(f"Camera: {label_text}")
+                        print(label_text)
                         self.last_printed_gesture = label_text
                     draw_hud(frame, label_text, conf, one_hot)
                 else:
-                    if getattr(self, 'last_printed_gesture', None) != "NO GESTURE":
-                        print("Camera: NO GESTURE")
-                        self.last_printed_gesture = "NO GESTURE"
+                    # Don't print anything for "NO GESTURE" - only print actual gestures
+                    self.last_printed_gesture = None
                     draw_hud(frame, "NO GESTURE", 0.0, [0,0,0,0,0])
 
                 if show_debug:

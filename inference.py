@@ -1,9 +1,10 @@
 from __future__ import annotations
-import argparse, logging, yaml
+import argparse, logging, yaml, warnings
 from pathlib import Path
 from src.realtime.webcam_loop import WebcamGestureLoop, LoopConfig
 
 logging.basicConfig(level=logging.ERROR, format="%(message)s")
+warnings.filterwarnings("ignore", category=UserWarning, module="google.protobuf.symbol_database")
 
 def main():
     ap = argparse.ArgumentParser()
