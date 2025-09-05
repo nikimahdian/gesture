@@ -32,8 +32,12 @@ def main():
         swipe_ratio_thresh=float(rt.get("swipe_ratio_thresh", 0.80)),
         swipe_min_frames=int(rt.get("swipe_min_frames", 10)),
         swipe_min_path=float(rt.get("swipe_min_path", 0.15)),
+        # Gesture timing configuration
+        dynamic_conf_threshold=float(rt.get("dynamic_conf_threshold", 0.50)),
+        dynamic_hold_time=float(rt.get("dynamic_hold_time", 4.0)),
+        static_hold_time=float(rt.get("static_hold_time", 3.0)),
         smoother_window=int(rt["smoother"].get("window_size", 7)),
-        smoother_conf_threshold=float(rt["smoother"].get("confidence_threshold", 0.7)),
+        smoother_conf_threshold=float(rt["smoother"].get("confidence_threshold", 0.50)),
     )
 
     camera = args.camera if args.camera is not None else loop_cfg.camera_index

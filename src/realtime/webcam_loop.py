@@ -29,10 +29,10 @@ class LoopConfig:
     swipe_min_frames: int = 5
     swipe_min_path: float = 0.08
     smoother_window: int = 5
-    smoother_conf_threshold: float = 0.30  # static gestures threshold  
-    dynamic_conf_threshold: float = 0.65  # threshold for left/right
+    smoother_conf_threshold: float = 0.50  # static gestures threshold  
+    dynamic_conf_threshold: float = 0.50  # threshold for left/right
     dynamic_hold_time: float = 5.0  # seconds to hold left/right prediction
-    static_hold_time: float = 1.5  # seconds to hold static gestures
+    static_hold_time: float = 3  # seconds to hold static gestures
 
 
 class WebcamGestureLoop:
@@ -119,11 +119,12 @@ class WebcamGestureLoop:
         lr_sum = float(model_probs[self.left_idx] + model_probs[self.right_idx])
         lr_margin = float(abs(model_probs[self.left_idx] - model_probs[self.right_idx]))
 
+        # Use enhanced model with velocity features for better L/R detection
         # If model is uncertain about L/R, prefer swipe
         if lr_sum < 0.6 or lr_margin < 0.15:
             return int(swipe_pred)
 
-        # If strong disagreement, only override with very confident swipe (we don't have swipe_conf here, use heuristic)
+        # If strong disagreement, use swipe override
         return pred if (pred == swipe_pred) else int(swipe_pred)
     
     def _smooth_landmarks_ema(self, landmarks: np.ndarray) -> np.ndarray:
@@ -232,6 +233,14 @@ class WebcamGestureLoop:
                 else:
                     self.landmarks.append(None)
                     self.centroids_x.append(0.0)
+                    # Clear smoother when no hand detected to prevent stale predictions
+                    self.smoother.labels.clear()
+                    self.smoother.confidences.clear()
+                    # Reset all gesture timers
+                    self.dynamic_gesture_start_time = None
+                    self.dynamic_gesture_type = None
+                    self.static_gesture_start_time = None
+                    self.static_gesture_type = None
 
                 self.frames.append(frame)
 

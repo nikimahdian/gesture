@@ -52,6 +52,27 @@ class SequenceFeatureExtractor:
         frac_pos = float(np.mean(vx > 0))
         frac_neg = float(np.mean(vx < 0))
         disp_ratio = float(np.abs(net_dx) / (path_len_x + 1e-6))
+        
+        # Enhanced velocity/speed features for LEFT/RIGHT detection
+        max_vx = float(np.max(np.abs(vx)))  # Maximum X velocity magnitude
+        max_vy = float(np.max(np.abs(vy)))  # Maximum Y velocity magnitude
+        mean_speed = float(np.mean(np.sqrt(vx ** 2 + vy ** 2)))  # Average speed
+        max_speed = float(np.max(np.sqrt(vx ** 2 + vy ** 2)))    # Peak speed
+        
+        # Acceleration features (velocity changes)
+        ax = np.diff(vx, prepend=vx[0])  # X acceleration
+        ay = np.diff(vy, prepend=vy[0])  # Y acceleration
+        mean_ax = float(np.mean(ax))     # Mean X acceleration
+        mean_ay = float(np.mean(ay))     # Mean Y acceleration
+        max_accel = float(np.max(np.sqrt(ax ** 2 + ay ** 2)))  # Peak acceleration
+        
+        # Directional consistency features
+        vx_consistency = float(np.std(vx))  # Lower std = more consistent direction
+        movement_energy = float(np.sum(vx ** 2))  # Total kinetic energy in X direction
+        
+        # Speed thresholds for movement detection
+        high_speed_frames = float(np.mean(np.sqrt(vx ** 2 + vy ** 2) > 0.02))  # Fraction of high-speed frames
+        stationary_frames = float(np.mean(np.sqrt(vx ** 2 + vy ** 2) < 0.005))  # Fraction of stationary frames
 
         # ---------- Pose / shape statistics ----------
         # Per-joint means/std over time (x,y)
@@ -95,6 +116,11 @@ class SequenceFeatureExtractor:
             float(path_len_x), float(path_len),
             float(mean_vx), float(frac_pos), float(frac_neg),
             float(disp_ratio),
+            # Enhanced velocity/speed features
+            max_vx, max_vy, mean_speed, max_speed,
+            mean_ax, mean_ay, max_accel,
+            vx_consistency, movement_energy,
+            high_speed_frames, stationary_frames,
             openness_mean, openness_std,
             thumb_up_score, thumb_down_score, thumb_rel_y_mean,
         ]
@@ -105,6 +131,11 @@ class SequenceFeatureExtractor:
             "path_len_x", "path_len",
             "mean_vx", "frac_pos", "frac_neg",
             "disp_ratio",
+            # Enhanced velocity/speed feature names
+            "max_vx", "max_vy", "mean_speed", "max_speed",
+            "mean_ax", "mean_ay", "max_accel",
+            "vx_consistency", "movement_energy",
+            "high_speed_frames", "stationary_frames",
             "openness_mean", "openness_std",
             "thumb_up_score", "thumb_down_score", "thumb_rel_y_mean",
         ]

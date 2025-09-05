@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(pip install:*)",
+      "Bash(.venv\\Scripts\\activate)",
+      "Bash(cut:*)"
     ],
     "deny": [],
     "ask": []

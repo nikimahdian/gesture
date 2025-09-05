@@ -45,8 +45,17 @@ class ClassicalModel:
     def evaluate(self, X: np.ndarray, y: np.ndarray, split_name: str, out_dir: Path) -> Tuple[float, str, np.ndarray]:
         y_pred = self.clf.predict(X)
         acc = float(np.mean(y_pred == y))
-        report = classification_report(y, y_pred, target_names=self.classes, digits=4, zero_division=0)
-        cm = confusion_matrix(y, y_pred, labels=list(range(len(self.classes))))
+        
+        # Only use classes that are actually present in this dataset split
+        unique_classes = sorted(set(y))
+        present_class_names = [self.classes[i] for i in unique_classes if i < len(self.classes)]
+        
+        logger.info("[%s] Classes present: %s", split_name, present_class_names)
+        
+        report = classification_report(y, y_pred, target_names=present_class_names, 
+                                     labels=unique_classes, digits=4, zero_division=0)
+        cm = confusion_matrix(y, y_pred, labels=unique_classes)
+        
         # Save
         (out_dir / f"classification_report_{split_name}.txt").write_text(report, encoding="utf-8")
         np.savetxt(out_dir / f"cm_{split_name}.csv", cm.astype(int), fmt="%d", delimiter=",")
