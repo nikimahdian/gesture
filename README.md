@@ -1,5 +1,7 @@
 # Real-time Hand-Gesture HMI (Webcam → Video Player)
 
+![Left Gesture](img/left.png) ![Palm Gesture](img/palm.png) ![Right Gesture](img/right.png) ![Thumbs Down](img/thumbs_down.png) ![Thumbs Up](img/thumbs_up.png)
+
 Production-ready Python project for real-time hand-gesture control of a video player. Runs on CPU with MediaPipe Hands, OpenCV, NumPy, and scikit-learn. Clean Windows pathing via `pathlib.Path` (no hardcoded forward slashes).
 
 > Target: **≥ 24 FPS** end-to-end on CPU using inference every K=5 frames and lightweight feature extraction.
